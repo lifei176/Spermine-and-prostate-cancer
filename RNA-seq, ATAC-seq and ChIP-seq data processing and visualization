@@ -1,0 +1,31 @@
+##############################1. RNA-seq data processing and visualization
+##############################
+##############################
+##############################
+##############################
+##############################
+(1) Trim raw fastq files
+trim_galore -q 20 --phred33 --paired --paired file.R1.fq.gz file.R2.fq.gz  --gzip -o trim_output
+(2) Map to the genome reference
+hisat2 -p 24 --dta -x grch38_tran/genome_tran -1 trim_output/file.R1_val_1.fq.gz  -2 trim_output/file.R2_val_2.fq.gz -S sam/file.sam
+(3) Count mapped reads for genes 
+subread-1.6.0-source/bin/featureCounts -p -a Homo_sapiens.GRCh38.84.gtf -t exon -g gene_name -o file.counts.txt sam/file.sam
+##############################2. ATAC-seq and ChIP-seq data processing and visualization
+##############################
+##############################
+##############################
+##############################
+##############################
+(1) Trim raw fastq files
+trim_galore -q 25 --phred33 --length 35 -e 0.1 --stringency 4 --paired file.R1.fq.gz file.R2.fq.gz  --gzip -o trim_output
+(2) Map to the genome reference
+bowtie2  -p 24  --very-sensitive -X 2000 -x hg19 -1 trim_output/file.R1_val_1.fq.gz  -2 trim_output/file.R2_val_2.fq.gz | samtools sort -@ 5 -O bam -o bam/file.bam
+(3) Remove duplicated reads
+sambamba_v0.6.6 markdup -r bam/file.bam bam/file.rmdup.bam;samtools view -h -f 2 -q 30 bam/file.rmdup.bam | grep -v chrM | samtools sort  -O bam  -@ 5 -o bam/file.last.bam;samtools index bam/file.last.bam bam/file.last.bam.bai;
+(4) Generate normalized  BigWig (BW) data
+deeptools-3.2.1/bin/bamCoverage --normalizeUsing CPM --bam bam/file.last.bam bam/file.last.bam -o bw/file.cpm.bw
+(5) Call peaks (for ATAC-seq, -c parameters )
+For ATAC-seq: macs2 callpeak -t bam/file.last.bam -g mm --nomodel --shift -100 --extsize 200  -g hs -n file --outdir peak
+For ChIP-seq: macs2 callpeak -c bam/Input.last.bam -t bam/file.last.bam -q 0.05 -f BAM -g hs -n file --outdir peak
+(6) Visualize results
+deeptools-3.2.1/bin/computeMatrix reference-point --referencePoint center  -b 3000 -a 3000 -R target_peak.bed -S file1.cpm.bw file2.cpm.bw file3.cpm.bw --skipZeros  -o outs/peakset.gz --outFileSortedRegions outs/target_peak.final.bed;deeptools-3.2.1/bin/plotHeatmap -m outs/peakset.gz -out outs/Heatmap_peakset.pdf --colorList  'white,red'
